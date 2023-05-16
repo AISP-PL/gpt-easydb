@@ -5,17 +5,16 @@
 from dataclasses import field, dataclass
 import logging
 import os
+from typing import Any
 from llama_index import (
     GPTVectorStoreIndex,
     SimpleDirectoryReader,
+    StorageContext,
+    load_index_from_storage,
     download_loader
 )
 
 from helpers.Response import Response
-from dotenv import load_dotenv
-
-# Load .env file
-load_dotenv()
 
 # Llama hub : Download .pdf loader
 PDFReader = download_loader('PDFReader')
@@ -30,6 +29,8 @@ class AutoVectorDatabase:
     # Vector database
     vectorDatabase: GPTVectorStoreIndex = field(
         init=False, repr=False, default=None)
+    # Vector database query engine
+    queryEngine: Any = field(init=False, repr=False, default=None)
     # Database directory
     databasePath: str = field(init=True, default='database')
     # Acceptable file extensions
@@ -66,12 +67,18 @@ class AutoVectorDatabase:
                 f.write(file+'\n')
 
         # Database : Load previous database version json.
-        if (os.path.exists(self.databaseFilepath)):
-            self.vectorDatabase = GPTVectorStoreIndex.load_from_disk(
-                f'{self.databasePath}/database.json')
+        storage = StorageContext.from_defaults(persist_dir='storage')
+        try:
+            self.vectorDatabase = load_index_from_storage(storage)
+        except ValueError:
+            pass
+
         # Database : If not exists then create.
-        else:
+        if (self.vectorDatabase is None):
             self.Create()
+
+        # Database : Create query context
+        self.queryEngine = self.vectorDatabase.as_query_engine()
 
     @property
     def databaseFilepath(self) -> str:
@@ -124,21 +131,21 @@ class AutoVectorDatabase:
             if (extension == '.txt'):
                 documents = SimpleDirectoryReader(
                     input_files=[filepath]).load_data()
-                db_documents.append(documents)
+                db_documents += (documents)
 
             elif (extension == '.pdf'):
                 documents = PDFReader().load_data(file=filepath)
-                db_documents.append(documents)
+                db_documents += (documents)
 
-        # File : Create embeddings
+        # Datavase : Create vector database and save
         logging.info(
             '(AutoVectorDatabase) Creating vector database from %u documents...', len(db_documents))
         self.vectorDatabase = GPTVectorStoreIndex.from_documents(db_documents)
-        self.vectorDatabase.save_to_disk(self.databaseFilepath)
+        self.vectorDatabase.storage_context.persist()
 
     def Query(self, text: str) -> Response:
         ''' Query database '''
-        response = self.vectorDatabase.query(text)
+        response = self.queryEngine.query(text)
 
         return Response(str(response), response.get_formatted_sources())
 
@@ -146,12 +153,3 @@ class AutoVectorDatabase:
 if __name__ == '__main__':
     # Database : Create
     database = AutoVectorDatabase(databasePath='database')
-
-    # User input : get prompt
-    prompt = input('Prompt database:')
-
-    # Database : Query prompt
-    response = database.Query(prompt)
-
-    # Response : Print
-    print(response)
