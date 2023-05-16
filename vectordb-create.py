@@ -12,6 +12,9 @@ from llama_index import (
     SimpleDirectoryReader
 )
 
+# Database directory
+database = "database/"
+
 # Setup logging and configure basics
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
