@@ -2,16 +2,17 @@
     Class creates automatically vector database from texts 
     in given directory.
 '''
-from dataclasses import field
+from dataclasses import field, dataclass
 import logging
-import sys
 import os
 from llama_index import (
-    GPTSimpleVectorIndex,
-    GPTSimpleKeywordTableIndex,
-    GPTListIndex,
-    SimpleDirectoryReader
+    GPTVectorStoreIndex,
+    SimpleDirectoryReader,
+    download_loader
 )
+
+# Llama hub : Download .pdf loader
+PDFReader = download_loader("PDFReader")
 
 @dataclass
 class AutoVectorDatabase:
@@ -19,51 +20,107 @@ class AutoVectorDatabase:
         Class creates automatically vector database from texts 
         in given directory.
     '''
+    # Vector database 
+    vectorDatabase: GPTVectorStoreIndex = field(init=False, repr=False, default=None)
     # Database directory
-    database: str = field(init=True, default="database/")
+    databasePath: str = field(init=True, default="database")
     # Acceptable file extensions
-    extensions: list = field(init=True, default=[".txt", ".pdf"])
+    extensions: list = field(init=True, default_factory=lambda :  [".txt", ".pdf"])
     # List of all acceptable files found in database directory
     files: list = field(init=False, repr=False, default_factory=list)
+    # Is database modified?
+    isModified: bool = field(init=False, repr=False, default=False)
 
     def __post_init__(self):
         ''' 
             Initialize class.
         '''
-        if (not os.path.exists(self.database)):
+        if (not os.path.exists(self.databasePath)):
             raise Exception("Database directory does not exist.")
 
-        # Database : Process all files in database directory
-        self.ProcessPathFiles(self.database)
+        # Files : Get all files in directory
+        self.ProcessPathFiles(self.databasePath)
 
-        # Database : Check every file embeddings exists
+        # Files : Read previous files list
+        previousFiles = []
+        if (os.path.exists(self.filesFilepath)):
+            with open(self.filesFilepath, "r") as f:
+                previousFiles = f.read().splitlines()
+        
+        # Files : Check if files list is changed
+        if (set(previousFiles) != set(self.files)):
+            self.isModified = True
 
+        # Files : Save files list to file
+        with open(self.filesFilepath, "w") as f:
+            for file in self.files:
+                f.write(file+"\n")
+
+        # Database : Load previous database version json.
+        if (os.path.exists(self.databaseFilepath)):
+            self.vectorDatabase = GPTVectorStoreIndex.load_from_disk(f"{self.databasePath}/database.json")
+        # Database : If not exists then create.
+        else:
+            self.Create()
+
+
+    @property
+    def databaseFilepath(self) -> str:
+        ''' Get database filepath. '''
+        return f"{self.databasePath}/database.json"
+    
+    @property
+    def filesFilepath(self) -> str:
+        ''' Get files filepath. '''
+        return f"{self.databasePath}/files.list"
+
+    @property
+    def files_count(self) -> int:
+        ''' Get files count. '''
+        return len(self.files)
+    
     
     def ProcessPathFiles(self, path: str):
         ''' Process all files in given path. '''
         # Files : Scann all files and directories in database directory
-        for path in os.listdir(path):
+        for filename in os.listdir(path):
+            filepath = os.path.join(path, filename)
             # File : Check if path is file
-            if (os.path.isfile(os.path.join(self.database, path))):
+            if (os.path.isfile(filepath)):
                 # Extension : Is Acceptable?
-                if (os.path.splitext(path)[1] in self.extensions):
-                    self.files.append(path)
+                if (os.path.splitext(filename)[1] in self.extensions):
+                    self.files.append(filepath)
 
             # Directory : Recursion
-            elif (os.path.isdir(os.path.join(self.database, path))):
-                self.ProcessPathFiles(os.path.join(self.database, path))
+            elif (os.path.isdir(filepath)):
+                self.ProcessPathFiles(filepath)
     
-    def ProcessFilesEmbeddings(self):
-        ''' Process all files embeddings. '''
+    def Create(self):
+        ''' Create vector database from found files. '''
+        # Documents : Create documents list
+        db_documents = []
+
         for filepath in self.files:
-            embedingspath = os.path.splitext(filepath)[0]+".json"
-            # File : Check if embeddings exists
-            if (not os.path.exists(embedingspath)):
-                # File : Create embeddings
-                db_documents = SimpleDirectoryReader(datasetpath).load_data()
-                db_index = GPTSimpleVectorIndex.from_documents(db_documents)
-                db_index.save_to_disk(f"{datasetpath}.json")
+            extension = os.path.splitext(filepath)[1]
+
+            if (extension == ".txt"):
+                documents = SimpleDirectoryReader(input_files=[filepath]).load_data()
+                db_documents.append(documents)
+
+            elif (extension == ".pdf"):
+                documents = PDFReader().load_data(file=filepath)
+                db_documents.append(documents)
+
+
+        # File : Create embeddings
+        logging.info('(AutoVectorDatabase) Creating vector database from %u documents...', len(db_documents))
+        self.vectorDatabase = GPTVectorStoreIndex.from_documents(db_documents)
+        self.vectorDatabase.save_to_disk(self.databaseFilepath)
 
                 
     
 
+if __name__ == "__main__":
+    # Database : Create
+    database = AutoVectorDatabase(databasePath="database")
+    print(database.files_count)
