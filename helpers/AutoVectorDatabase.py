@@ -67,10 +67,12 @@ class AutoVectorDatabase:
                 f.write(file+'\n')
 
         # Database : Load previous database version json.
-        storage = StorageContext.from_defaults(persist_dir='storage')
         try:
+            storage = StorageContext.from_defaults(persist_dir='storage')
             self.vectorDatabase = load_index_from_storage(storage)
         except ValueError:
+            logging.warning(
+                '(AutoVectorDatabase) Previous database version not found.')
             pass
 
         # Database : If not exists then create.
