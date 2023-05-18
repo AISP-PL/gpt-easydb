@@ -7,7 +7,8 @@ import argparse
 from helpers.AutoVectorDatabase import AutoVectorDatabase
 from helpers.LoggingSetup import loggingSetup
 from dotenv import load_dotenv
-
+from controllers.conversation import Conversation
+from models.dialog import Dialog
 from views.ViewResponse import ViewResponse
 
 def parseArguments():
@@ -42,6 +43,9 @@ def main():
     # Database : Create
     database = AutoVectorDatabase(databasePath='database')
 
+    # Conversation : Create
+    conversation = Conversation()
+
     # Prompt : Prompt database in a loop
     prompt = ''
     while (len(prompt) != 'q'):
@@ -49,13 +53,19 @@ def main():
         prompt = input('Prompt (write `q` to exit):')
         # Prompt : Check
         if (len(prompt) == 0) or (prompt == 'q'):
-            sys.exit(0)
+            break
 
         # Database : Query prompt
         response = database.Query(prompt)
 
         # Response : Print
         ViewResponse.View(args, response)
+
+        # Conversation : Add dialog
+        conversation.Add(Dialog(question=prompt, answer=response))
+
+    # Conversation : Save
+    conversation.Save(args=args)
 
 
 if __name__ == '__main__':
