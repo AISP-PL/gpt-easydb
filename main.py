@@ -22,18 +22,20 @@ def main():
     # Database : Create
     database = AutoVectorDatabase(databasePath='database')
 
-    # User input : get prompt
-    prompt = input('Prompt:')
-    # Prompt : Check
-    if (len(prompt) == 0):
-        logging.error('Prompt is empty.')
-        sys.exit(-1)
+    # Prompt : Prompt database in a loop
+    prompt = ''
+    while (len(prompt) != 'q'):
+        # User input : get prompt
+        prompt = input('Prompt (write `q` to exit):')
+        # Prompt : Check
+        if (len(prompt) == 0) or (prompt == 'q'):
+            sys.exit(0)
 
-    # Database : Query prompt
-    response = database.Query(prompt)
+        # Database : Query prompt
+        response = database.Query(prompt)
 
-    # Response : Print
-    ViewResponse.View(response)
+        # Response : Print
+        ViewResponse.View(response)
 
 
 if __name__ == '__main__':
