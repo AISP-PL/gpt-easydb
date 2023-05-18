@@ -3,17 +3,37 @@
 '''
 import logging
 import sys
+import argparse
 from helpers.AutoVectorDatabase import AutoVectorDatabase
 from helpers.LoggingSetup import loggingSetup
 from dotenv import load_dotenv
 
 from views.ViewResponse import ViewResponse
 
+def parseArguments():
+    ''' Parse command line arguments '''
+    # Create parser
+    parser = argparse.ArgumentParser(
+        description='Auto Vector Database')
+
+    # Add arguments
+    parser.add_argument('-vs', '--view-sources', action='store_true',
+                        help='View sources of response.')
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Return arguments
+    return args
+
 
 def main():
     ''' Main function '''
     # Load .env file
     load_dotenv()
+
+    # Arguments : Parse
+    args = parseArguments()
 
     # Logging : Setup
     loggingSetup(console_log_enabled=True,
@@ -35,7 +55,7 @@ def main():
         response = database.Query(prompt)
 
         # Response : Print
-        ViewResponse.View(response)
+        ViewResponse.View(args, response)
 
 
 if __name__ == '__main__':
