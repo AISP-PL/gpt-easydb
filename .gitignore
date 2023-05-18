@@ -161,3 +161,4 @@ cython_debug/
 env3.11/
 database/*
 storage/*
+conversations/*
