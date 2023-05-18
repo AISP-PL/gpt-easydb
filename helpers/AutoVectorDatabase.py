@@ -61,12 +61,7 @@ class AutoVectorDatabase:
         if (set(previousFiles) != set(self.files)):
             self.isModified = True
 
-        # Files : Save files list to file
-        with open(self.filesFilepath, 'w') as f:
-            for file in self.files:
-                f.write(file+'\n')
-
-        # Database : Load previous database version json.
+        # Database : Load previous database/storage version json.
         try:
             storage = StorageContext.from_defaults(persist_dir='storage')
             self.vectorDatabase = load_index_from_storage(storage)
@@ -78,6 +73,11 @@ class AutoVectorDatabase:
         # Database : If not exists then create.
         if (self.vectorDatabase is None):
             self.Create()
+
+        # Database : If modified then update.
+        elif (self.isModified):
+            self.Update(previousFiles=previousFiles)
+
 
         # Database : Create query context
         self.queryEngine = self.vectorDatabase.as_query_engine()
@@ -107,6 +107,14 @@ class AutoVectorDatabase:
         ''' Get files count. '''
         return len([file for file in self.files if os.path.splitext(file)[1] == '.pdf'])
 
+    @property
+    def docs_count(self) -> int:
+        ''' Get documents count. '''
+        if (self.vectorDatabase is None):
+            return 0
+
+        return len(self.vectorDatabase.docstore.docs)
+
     def ProcessPathFiles(self, path: str):
         ''' Process all files in given path. '''
         # Files : Scann all files and directories in database directory
@@ -122,28 +130,77 @@ class AutoVectorDatabase:
             elif (os.path.isdir(filepath)):
                 self.ProcessPathFiles(filepath)
 
+    def FileToDocuments(self, filepath: str) -> str:
+        ''' Convert file to document. '''
+        # Documents : List of file documents
+        documents = []
+        # File : Get extension
+        extension = os.path.splitext(filepath)[1]
+
+        if (extension == '.txt'):
+            documents = SimpleDirectoryReader(
+                input_files=[filepath]).load_data()
+
+        elif (extension == '.pdf'):
+            documents = PDFReader().load_data(file=filepath)
+
+        return documents
+
     def Create(self):
         ''' Create vector database from found files. '''
         # Documents : Create documents list
         db_documents = []
 
+        # Files : Convert files to documents
         for filepath in self.files:
-            extension = os.path.splitext(filepath)[1]
-
-            if (extension == '.txt'):
-                documents = SimpleDirectoryReader(
-                    input_files=[filepath]).load_data()
-                db_documents += (documents)
-
-            elif (extension == '.pdf'):
-                documents = PDFReader().load_data(file=filepath)
-                db_documents += (documents)
+            db_documents + self.FileToDocuments(filepath)
 
         # Datavase : Create vector database and save
         logging.info(
             '(AutoVectorDatabase) Creating vector database from %u documents...', len(db_documents))
         self.vectorDatabase = GPTVectorStoreIndex.from_documents(db_documents)
+        
+        # Database : Save
+        self.Save()
+
+    def Update(self, previousFiles:list):
+        ''' Update vector database from found files. '''
+        logging.info('(AutoVectorDatabase) Database was modified. Updating!')
+
+        # Files : Remove deleted files
+        for filepath in previousFiles:
+            if (filepath not in self.files):
+                self.vectorDatabase.remove(filepath)
+
+
+        # Files : Insert new files
+        new_documents = []
+        for filepath in self.files:
+            if (filepath not in previousFiles):
+                new_documents += self.FileToDocuments(filepath)
+
+        if (len(new_documents) > 0):
+            self.vectorDatabase.refresh(new_documents)
+            logging.info('(AutoVectorDatabase) Updated %u new documents.', len(new_documents))
+
+        # Database : Save
+        self.Save()
+        
+
+    def Save(self):
+        ''' Save current database. '''
+        if (self.vectorDatabase is None):
+            return 
+
+        # Database : Save
         self.vectorDatabase.storage_context.persist()
+        # Files : Save 
+        with open(self.filesFilepath, 'w') as f:
+            for file in self.files:
+                f.write(file+'\n')
+
+        # ModifiedFlag : Reset
+        self.isModified = False
 
     def Query(self, text: str) -> Response:
         ''' Query database '''
